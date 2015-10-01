@@ -26,9 +26,25 @@ Usage
 Please refer to `DAQ setup documentation <http://pythonhosted.org/wlauto/daq_device_setup.html>`_
 for WA.
 
+
+License
+-------
+
+This package is distributed under `Apache v2.0 License <http://www.apache.org/licenses/LICENSE-2.0>`_. 
+
+
+Feedback, Contrubutions and Support
+-----------------------------------
+
+- Please use the GitHub Issue Tracker associated with this repository for
+  feedback.
+- ARM licensees may contact ARM directly via their partner managers.
+- We welcome code contributions via GitHub Pull requests. Please try to
+  stick to the style in the rest of the code for your contributions.
+
+
 .. note:: This package was previously distributed as part of `ARM Workload
           Automation`_.
-
 
 .. _National Instruments DAQ: http://www.ni.com/data-acquisition/
 .. _ARM Workload Automation: https://github.com/ARM-software/workload-automation
