@@ -62,6 +62,11 @@ class DeviceConfiguration(Serializable):
         if not len(self.resistor_values) == len(self.labels):
             message = 'The number  of resistors ({}) does not match the number of labels ({})'
             raise ConfigurationError(message.format(len(self.resistor_values), len(self.labels)))
+        if self.channel_map % 2:
+            raise ConfigurationError("'channel_map' must contain an even number of channels")
+        if len(self.labels) > len(self.channel_map) / 2:
+            message = "The number of labels cannot exceed half the number of channels in the channel map"
+            raise ConfigurationError(message)
 
     def __str__(self):
         return self.serialize()
@@ -151,4 +156,3 @@ def get_config_parser(server=True, device=True):
         parser.add_argument('--host', action=UpdateServerConfig)
         parser.add_argument('--port', action=UpdateServerConfig, type=int)
     return parser
-
