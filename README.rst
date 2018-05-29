@@ -4,7 +4,7 @@ DAQ Server
 This a server that provides remote access to a `National Instruments DAQ`_ (data
 acquisition device) for power measurement.  National Instruments provide DAQ
 drivers only for Windows and for very specific (old) Linux kernels. This package
-allows DAQs to be usable from other operating systems. 
+allows DAQs to be usable from other operating systems.
 
 The idea is that the DAQ is connected to a machine running an OS for which
 drivers are available; that machine is also running the server component of this
@@ -23,14 +23,12 @@ Installation
 Usage
 -----
 
-Please refer to `DAQ setup documentation <http://pythonhosted.org/wlauto/daq_device_setup.html>`_
-for WA.
-
+Please refer to `DAQ Server Guide <https://daq-server.readthedocs.io/en/latest/>`_.
 
 License
 -------
 
-This package is distributed under `Apache v2.0 License <http://www.apache.org/licenses/LICENSE-2.0>`_. 
+This package is distributed under `Apache v2.0 License <http://www.apache.org/licenses/LICENSE-2.0>`_.
 
 
 Feedback, Contrubutions and Support
