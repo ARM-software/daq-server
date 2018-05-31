@@ -24,6 +24,9 @@ from twisted.internet.error import ConnectionLost, ConnectionDone
 from twisted.protocols.basic import LineReceiver
 from twisted.python.procutils import which
 
+from past.builtins import basestring
+
+
 if __name__ == '__main__':  # for debugging
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from daqpower import log
@@ -95,7 +98,7 @@ class CommandExecutorProtocol(Protocol):
             self.timeoutCallback.cancel()
             try:
                 response = DaqServerResponse.deserialize(data)
-            except Exception, e:  # pylint: disable=W0703
+            except Exception as e:  # pylint: disable=W0703
                 self.errorOut('Invalid response: {} ({})'.format(data, e))
             else:
                 if response.status != Status.ERROR:
@@ -359,7 +362,7 @@ def run_send_command():
     parser.add_argument('--verbose', help='Produce verobose output.', action='store_true', default=False)
     args = parser.parse_args()
     if not args.device_config.labels:
-        args.device_config.labels = ['PORT_{}'.format(i) for i in xrange(len(args.device_config.resistor_values))]
+        args.device_config.labels = ['PORT_{}'.format(i) for i in range(len(args.device_config.resistor_values))]
 
     if args.verbose:
         log.start_logging('DEBUG')
@@ -375,9 +378,9 @@ def run_send_command():
         command = Command(args.command)
 
     result = execute_command(args.server_config, command)
-    print result
+    print(result)
     if result.data:
-        print result.data
+        print(result.data)
 
 
 if __name__ == '__main__':

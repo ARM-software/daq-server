@@ -68,9 +68,9 @@ class DummyDaqRunner(object):
     def start(self):
         import csv, random
         log.info('runner started')
-        for i in xrange(self.config.number_of_ports):
+        for i in range(self.config.number_of_ports):
             rows = [['power', 'voltage']] + [[random.gauss(1.0, 1.0), random.gauss(1.0, 0.1)]
-                                             for _ in xrange(self.num_rows)]
+                                             for _ in range(self.num_rows)]
             with open(self.get_port_file_path(self.config.labels[i]), 'wb') as wfh:
                 writer = csv.writer(wfh)
                 writer.writerows(rows)
@@ -206,7 +206,7 @@ class DaqControlProtocol(LineReceiver):  # pylint: disable=W0223
         log.info('Received: {}'.format(line))
         try:
             request = DaqServerRequest.deserialize(line)
-        except Exception, e:  # pylint: disable=W0703
+        except Exception as e:  # pylint: disable=W0703
             # PyDAQmx exceptions use "mess" rather than the standard "message"
             # to pass errors...
             message = getattr(e, 'mess', e.message)
@@ -234,7 +234,7 @@ class DaqControlProtocol(LineReceiver):  # pylint: disable=W0223
                 self.terminate(request)
             else:
                 self.sendError('Received unknown command: {}'.format(request.command))
-        except Exception, e:  # pylint: disable=W0703
+        except Exception as e:  # pylint: disable=W0703
             message = getattr(e, 'mess', e.message)
             self.sendError('{}: {}'.format(e.__class__.__name__, message))
 

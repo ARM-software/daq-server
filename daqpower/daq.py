@@ -48,7 +48,7 @@ import sys
 import csv
 import time
 import threading
-from Queue import Queue, Empty
+from queue import Queue, Empty
 
 import numpy
 
@@ -96,7 +96,7 @@ class ReadSamplesBaseTask(Task):
         self.samples_read = int32()
         self.remainder = []
         # create voltage channels
-        for i in xrange(0, 2 * self.config.number_of_ports, 2):
+        for i in range(0, 2 * self.config.number_of_ports, 2):
             self.CreateAIVoltageChan('{}/ai{}'.format(config.device_id, config.channel_map[i]),
                                      '', DAQmx_Val_Diff,
                                      -config.v_range, config.v_range,
@@ -260,8 +260,8 @@ class SampleProcessor(AsyncWriter):
 
     def do_write(self, sample_tuple):
         samples, number_of_samples = sample_tuple
-        for i in xrange(0, number_of_samples * self.number_of_ports * 2, self.number_of_ports * 2):
-            for j in xrange(self.number_of_ports):
+        for i in range(0, number_of_samples * self.number_of_ports * 2, self.number_of_ports * 2):
+            for j in range(self.number_of_ports):
                 V = float(samples[i + 2 * j])
                 DV = float(samples[i + 2 * j + 1])
                 P = V * (DV / self.resistor_values[j])
@@ -335,12 +335,12 @@ if __name__ == '__main__':
     labels = ['PORT_0']
     dev_config = DeviceConfig('Dev1', channel_map, resistor_values, 2.5, 0.2, 10000, len(resistor_values), labels)
     if not len(sys.argv) == 3:
-        print 'Usage: {} OUTDIR DURATION'.format(os.path.basename(__file__))
+        print('Usage: {} OUTDIR DURATION'.format(os.path.basename(__file__)))
         sys.exit(1)
     output_directory = sys.argv[1]
     duration = float(sys.argv[2])
 
-    print "Avialable devices:", list_available_devices()
+    print("Avialable devices:", list_available_devices())
     runner = DaqRunner(dev_config, output_directory)
     runner.start()
     time.sleep(duration)

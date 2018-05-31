@@ -50,8 +50,8 @@ class DeviceConfiguration(Serializable):
             self.resistor_values = kwargs.pop('resistor_values') or []
             self.channel_map = kwargs.pop('channel_map') or self.default_channel_map
             self.labels = (kwargs.pop('labels') or
-                           ['PORT_{}.csv'.format(i) for i in xrange(len(self.resistor_values))])
-        except KeyError, e:
+                           ['PORT_{}.csv'.format(i) for i in range(len(self.resistor_values))])
+        except KeyError as e:
             raise ConfigurationError('Missing config: {}'.format(e.message))
         if kwargs:
             raise ConfigurationError('Unexpected config: {}'.format(kwargs))
