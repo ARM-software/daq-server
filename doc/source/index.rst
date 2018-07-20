@@ -183,9 +183,9 @@ There are a number of other settings that can optionally be specified in the
 configuration (e.g. the labels to be used for DAQ ports). Please refer to the
 `WA DAQ Documentation`_ for more details.
 
-.. _Workload Automation: http://workload-automation.readthedocs.io/en/next/index.html
+.. _Workload Automation: http://workload-automation.readthedocs.io/en/latest/index.html
 
-.. _WA DAQ Documentation: http://workload-automation.readthedocs.io/en/next/plugins/energy_instrument_backends.html#daq
+.. _WA DAQ Documentation: http://workload-automation.readthedocs.io/en/latest/plugins/energy_instrument_backends.html#daq
 
 
 Collecting Power from the Command Line
