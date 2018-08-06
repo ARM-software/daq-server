@@ -81,7 +81,7 @@ def list_available_devices():
         bufsize = 2048  # Should be plenty for all but the most pathalogical of situations.
         buf = create_string_buffer('\000' * bufsize)
         DAQmxGetSysDevNames(buf, bufsize)
-        return buf.value.split(',')
+        return [name.strip() for name in buf.value.split(',')]
     else:
         return []
 
