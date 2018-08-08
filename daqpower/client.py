@@ -87,7 +87,11 @@ class CommandExecutorProtocol(Protocol):
         self.sent_request = DaqServerRequest(command, params)
         request_string = self.sent_request.serialize()
         log.debug('sending request: {}'.format(request_string))
-        self.transport.write(''.join([request_string, '\r\n']))
+        request_string = ''.join([request_string, '\r\n'])
+        if sys.version_info[0] == 3:
+            self.transport.write(request_string.encode('utf-8'))
+        else:
+            self.transport.write(request_string)
         self.timeoutCallback = reactor.callLater(self.timeout, self.requestTimedOut)
         self.waiting_for_response = True
 
@@ -96,6 +100,8 @@ class CommandExecutorProtocol(Protocol):
         if self.waiting_for_response:
             self.waiting_for_response = False
             self.timeoutCallback.cancel()
+            if sys.version_info[0] == 3:
+                data = data.decode('utf-8')
             try:
                 response = DaqServerResponse.deserialize(data)
             except Exception as e:  # pylint: disable=W0703
@@ -253,6 +259,8 @@ class FileReceiver(LineReceiver):  # pylint: disable=W0223
             self.fh.close()
 
     def lineReceived(self, line):
+        if sys.version_info[0] == 3:
+            line = line.decode('utf-8')
         line = line.rstrip('\r\n') + '\n'
         self.fh.write(line)
 
