@@ -49,6 +49,13 @@ class DaqServerRequest(Serializable):
 
 class DaqServerResponse(Serializable):
 
+    @classmethod
+    def deserialize(cls, text):
+        d = json.loads(text)
+        if 'status' in d:
+            d['status'] = Status(d['status'])
+        return cls(**d)
+
     def __init__(self, status, message=None, data=None):  # pylint: disable=W0231
         self.status = status
         self.message = message.strip().replace('\r\n', ' ') if message else ''
