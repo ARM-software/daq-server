@@ -24,7 +24,7 @@ import socket
 import time
 from datetime import datetime, timedelta
 
-from zope.interface import implements
+from zope.interface import implementer
 from twisted.protocols.basic import LineReceiver
 from twisted.internet.protocol import Factory, Protocol
 from twisted.internet import reactor, interfaces
@@ -71,9 +71,16 @@ class DummyDaqRunner(object):
         for i in range(self.config.number_of_ports):
             rows = [['power', 'voltage']] + [[random.gauss(1.0, 1.0), random.gauss(1.0, 0.1)]
                                              for _ in range(self.num_rows)]
-            with open(self.get_port_file_path(self.config.labels[i]), 'wb') as wfh:
+            if sys.version_info[0] == 3:
+                wfh = open(self.get_port_file_path(self.config.labels[i]), 'w', newline='')
+            else:
+                wfh = open(self.get_port_file_path(self.config.labels[i]), 'wb')
+
+            try:
                 writer = csv.writer(wfh)
                 writer.writerows(rows)
+            finally:
+                wfh.close()
 
         self.is_running = True
 
@@ -203,13 +210,15 @@ class DaqControlProtocol(LineReceiver):  # pylint: disable=W0223
 
     def lineReceived(self, line):
         line = line.strip()
+        if sys.version_info[0] == 3:
+            line = line.decode('utf-8')
         log.info('Received: {}'.format(line))
         try:
             request = DaqServerRequest.deserialize(line)
         except Exception as e:  # pylint: disable=W0703
             # PyDAQmx exceptions use "mess" rather than the standard "message"
             # to pass errors...
-            message = getattr(e, 'mess', e.message)
+            message = getattr(e, 'mess', e.args[0] if e.args else str(e))
             self.sendError('Received bad request ({}: {})'.format(e.__class__.__name__, message))
         else:
             self.processRequest(request)
@@ -235,7 +244,7 @@ class DaqControlProtocol(LineReceiver):  # pylint: disable=W0223
             else:
                 self.sendError('Received unknown command: {}'.format(request.command))
         except Exception as e:  # pylint: disable=W0703
-            message = getattr(e, 'mess', e.message)
+            message = getattr(e, 'mess', e.args[0] if e.args else str(e))
             self.sendError('{}: {}'.format(e.__class__.__name__, message))
 
     def configure(self, request):
@@ -313,7 +322,11 @@ class DaqControlProtocol(LineReceiver):  # pylint: disable=W0223
 
     def sendLine(self, line):
         log.info('Responding: {}'.format(line))
-        LineReceiver.sendLine(self, line.replace('\r\n', ''))
+        line = line.replace('\r\n', '')
+        if sys.version_info[0] == 3:
+            LineReceiver.sendLine(self, line.encode('utf-8'))
+        else:
+            LineReceiver.sendLine(self, line)
 
     def _initiate_file_transfer(self, filepath):
         sender_factory = FileSenderFactory(filepath, self.factory)
@@ -393,9 +406,8 @@ class DaqFactory(Factory):
     __repr__ = __str__
 
 
+@implementer(interfaces.IPushProducer)
 class FileReader(object):
-
-    implements(interfaces.IPushProducer)
 
     def __init__(self, filepath):
         self.fh = open(filepath)
@@ -412,7 +424,7 @@ class FileReader(object):
         self._paused = False
         try:
             while not self._paused:
-                line = self.fh.next().rstrip('\n') + '\r\n'
+                line = next(self.fh).rstrip('\n') + '\r\n'
                 self.proto.transport.write(line)
         except StopIteration:
             log.debug('Sent everything.')
