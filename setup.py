@@ -38,6 +38,7 @@ params = dict(
     install_requires=[
         'twisted',
         'PyDAQmx',
+        'numpy'
     ],
     # https://pypi.python.org/pypi?%3Aaction=list_classifiers
     classifiers=[
