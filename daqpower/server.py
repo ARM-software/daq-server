@@ -425,7 +425,10 @@ class FileReader(object):
         try:
             while not self._paused:
                 line = next(self.fh).rstrip('\n') + '\r\n'
-                self.proto.transport.write(line)
+                if sys.version_info[0] == 3:
+                    self.proto.transport.write(line.encode('utf-8'))
+                else:
+                    self.proto.transport.write(line)
         except StopIteration:
             log.debug('Sent everything.')
             self.stopProducing()

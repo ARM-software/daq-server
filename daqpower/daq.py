@@ -81,9 +81,16 @@ def list_available_devices():
     """Returns the list of DAQ devices visible to the driver."""
     if DAQmxGetSysDevNames:
         bufsize = 2048  # Should be plenty for all but the most pathalogical of situations.
-        buf = create_string_buffer('\000' * bufsize)
+        null_char = '\000'
+        if sys.version_info[0] == 3:
+            null_char = null_char.encode('utf-8')
+        buf = create_string_buffer(null_char * bufsize)
         DAQmxGetSysDevNames(buf, bufsize)
-        return [name.strip() for name in buf.value.split(',')]
+        if sys.version_info[0] == 3:
+            value = buf.value.decode('utf-8')
+        else:
+            value = buf.value
+        return [name.strip() for name in value.split(',')]
     else:
         return []
 
