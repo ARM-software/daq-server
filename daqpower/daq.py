@@ -48,9 +48,11 @@ import sys
 import csv
 import time
 import threading
-from queue import Queue, Empty
-
 import numpy
+if sys.version_info[0] == 3:
+    from queue import Queue, Empty
+else:
+    from Queue import Queue, Empty
 
 from PyDAQmx import Task, DAQError
 try:
