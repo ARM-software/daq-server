@@ -227,7 +227,7 @@ class PortWriter(object):
 
     def __init__(self, path):
         self.path = path
-        self.fh = open(path, 'w', 0)
+        self.fh = open(path, 'w')
         self.writer = csv.writer(self.fh)
         self.writer.writerow(['power', 'voltage'])
 
