@@ -22,6 +22,7 @@ from twisted.internet import reactor
 from twisted.internet.protocol import Protocol, ClientFactory, ReconnectingClientFactory
 from twisted.internet.error import ConnectionLost, ConnectionDone
 from twisted.protocols.basic import LineReceiver
+from twisted.python.procutils import which
 
 if __name__ == '__main__':  # for debugging
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -284,6 +285,9 @@ class FileReceiverFactory(ReconnectingClientFactory):
 
 
 def execute_command(server_config, command, **kwargs):
+    # We use lsof to determine before/after file descriptors
+    if not which('lsof'):
+            raise Exception('Could not find "lsof". Please make sure it is installed and is in PATH.')
     before_fds = _get_open_fds()  # see the comment in the finally clause below
     if isinstance(command, basestring):
         command = Command(command, **kwargs)
