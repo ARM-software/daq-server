@@ -32,7 +32,7 @@ params = dict(
         'scripts/run-daq-server',
         'scripts/send-daq-command',
     ],
-    url='N/A',
+    url='https://github.com/ARM-software/daq-server',
     maintainer='ARM Device Lab',
     maintainer_email='workload-automation@arm.com',
     install_requires=[
