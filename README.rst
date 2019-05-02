@@ -15,9 +15,15 @@ part of this package to configure and collect measurements from that DAQ.
 Installation
 ------------
 
-::
+From PyPI::
 
         sudo -H pip install daqpower
+
+The latest developement version from GitHub::
+
+    git clone git@github.com:ARM-software/daq-server.git daq-server
+    cd daq-server
+    sudo -H python setup.py install
 
 
 Usage

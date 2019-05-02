@@ -101,7 +101,7 @@ The DAQ power measurement solution is implemented in daqpower Python library,
 the package which is available for download via pip or from `Github`_.
 
   - Install NI-DAQmx driver, as described in the previous section.
-  - Install Python 2.7.
+  - Install Python 2.7 or Python3.
   - Download and install ``pip``, ``numpy`` and ``twisted`` Python packages.
     These packages have C extensions, an so you will need a native compiler set
     up if you want to install them from PyPI. As an easier alternative, you can
@@ -110,6 +110,12 @@ the package which is available for download via pip or from `Github`_.
   - Install the daqpower package using pip::
 
         sudo -H pip install daqpower
+
+    Or alternatively install the latest development version from GitHub::
+
+        git clone git@github.com:ARM-software/daq-server.git daq-server
+        cd daq-server
+        sudo -H python setup.py install
 
 
     This should automatically download and install ``PyDAQmx`` package as well
