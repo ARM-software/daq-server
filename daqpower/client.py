@@ -29,6 +29,24 @@ from daqpower.config import get_config_parser
 
 __all__ = ['DaqClient']
 
+class FileReceiver(object):
+    """Context manager to receive a port file using the daq server's open/read/close protocol"""
+    def __init__(self, daq_client, remote_file):
+        self.daq_client = daq_client
+        self.remote_file = remote_file
+        self.port_descriptor = None
+
+    def __enter__(self):
+        self.port_descriptor = self.daq_client.open_port_file(self.remote_file)
+        return self
+
+    def __exit__(self, exc_type, value, traceback):
+        self.daq_client.close_port_file(self.port_descriptor)
+
+    def read(self, size):
+        """Read size bytes from the file"""
+        return self.daq_client.read_port_file(self.port_descriptor, size)
+
 class DaqClient(xmlrpc.client.ServerProxy):
     """Interface with the remote DAQ server"""
     def __init__(self, host, port):
@@ -42,9 +60,21 @@ class DaqClient(xmlrpc.client.ServerProxy):
         if port_files == []:
             self.logger.warning('No ports were returned')
         for port_file in port_files:
-            filename = os.path.join(output_directory, port_file)
-            with open(filename, 'w') as fout:
-                fout.write(self.pull(port_file))
+            output_fname = os.path.join(output_directory, port_file)
+            self.pull(port_file, output_fname)
+
+    def pull(self, remote_file, local_file):
+        """
+        Download a remote port file from the server. You can use list_port_files() to get a list
+        of valid remote_files
+        """
+        with FileReceiver(self, remote_file) as fin:
+            with open(local_file, 'w') as fout:
+                while True:
+                    chunk = fin.read(1048576)
+                    if not chunk:
+                        break
+                    fout.write(chunk)
 
 
 def run_send_command():
