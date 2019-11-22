@@ -19,23 +19,23 @@ from __future__ import division
 import os
 import sys
 import argparse
+import logging
 import shutil
 import socket
+import threading
 import time
 from datetime import datetime, timedelta
-
-from zope.interface import implementer
-from twisted.protocols.basic import LineReceiver
-from twisted.internet.protocol import Factory, Protocol
-from twisted.internet import reactor, interfaces
-from twisted.internet.error import ConnectionLost, ConnectionDone
+try:
+    from xmlrpc.server import SimpleXMLRPCServer
+except ImportError:
+    # In python2 it was packaged as SimpleXMLRPCServer
+    from SimpleXMLRPCServer import SimpleXMLRPCServer
 
 
 if __name__ == "__main__":  # for debugging
     sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-from daqpower import log
+from daqpower.log import start_logging
 from daqpower.config import DeviceConfiguration
-from daqpower.common import DaqServerRequest, DaqServerResponse, Status
 try:
     from daqpower.daq import DaqRunner, list_available_devices, CAN_ENUMERATE_DEVICES
     __import_error = None
@@ -61,14 +61,15 @@ class DummyDaqRunner(object):
         return self.config.number_of_ports
 
     def __init__(self, config, output_directory):
-        log.info('Creating runner with {} {}'.format(config, output_directory))
+        self.logger = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.logger.info('Creating runner with %s %s', config, output_directory)
         self.config = config
         self.output_directory = output_directory
         self.is_running = False
 
     def start(self):
         import csv, random
-        log.info('runner started')
+        self.logger.info('runner started')
         for i in range(self.config.number_of_ports):
             rows = [['power', 'voltage']] + [[random.gauss(1.0, 1.0), random.gauss(1.0, 0.1)]
                                              for _ in range(self.num_rows)]
@@ -87,105 +88,155 @@ class DummyDaqRunner(object):
 
     def stop(self):
         self.is_running = False
-        log.info('runner stopped')
+        self.logger.info('runner stopped')
 
     def get_port_file_path(self, port_id):
-        if port_id in self.config.labels:
-            return os.path.join(self.output_directory, '{}.csv'.format(port_id))
-        else:
-            raise Exception('Invalid port id: {}'.format(port_id))
+        if port_id not in self.config.labels:
+            raise ValueError('Invalid port id: {}'.format(port_id))
+        return os.path.join(self.output_directory, '{}.csv'.format(port_id))
+
+
+class CleanupDirectoryThread(threading.Thread):
+    """Cleanup old uncollected data files to recover disk space."""
+    def __init__(self, base_output_directory, cleanup_period=24 * 60 * 60,
+                 cleanup_after_days=5):
+        super(CleanupDirectoryThread, self).__init__()
+        self.logger = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.daemon = True
+        self.base_output_directory = base_output_directory
+        self.cleanup_period = cleanup_period
+        self.cleanup_threshold = timedelta(cleanup_after_days)
+        self._stop_signal = threading.Event()
+
+    def run(self):
+        while not self._stop_signal.wait(timeout=self.cleanup_period):
+            self.logger.info('Performing cleanup of the output directory...')
+            current_time = datetime.now()
+            base_directory = self.base_output_directory
+            for entry in os.listdir(base_directory):
+                entry_path = os.path.join(base_directory, entry)
+                entry_ctime = datetime.fromtimestamp(os.path.getctime(entry_path))
+                existence_time = current_time - entry_ctime
+                if existence_time > self.cleanup_threshold:
+                    self.logger.debug('Removing {} (existed for {})'.format(entry, existence_time))
+                    shutil.rmtree(entry_path)
+                else:
+                    self.logger.debug('Keeping {} (existed for {})'.format(entry, existence_time))
+            self.logger.debug('Cleanup complete.')
+
+    def stop(self):
+        self._stop_signal.set()
+        self.join()
 
 
 class DaqServer(object):
-
+    """Interface between a DaqRunner and a remote client"""
     def __init__(self, base_output_directory):
+        self.logger = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
         self.base_output_directory = os.path.abspath(base_output_directory)
         if os.path.isdir(self.base_output_directory):
-            log.info('Using output directory: {}'.format(self.base_output_directory))
+            self.logger.info('Using output directory: %s', self.base_output_directory)
         else:
-            log.info('Creating new output directory: {}'.format(self.base_output_directory))
+            self.logger.info('Creating new output directory: %s', self.base_output_directory)
             os.makedirs(self.base_output_directory)
+        self.cleanup_directory_thread = CleanupDirectoryThread(self.base_output_directory)
+        self.cleanup_directory_thread.start()
         self.runner = None
         self.output_directory = None
         self.labels = None
 
-    def configure(self, config_string):
-        message = None
+    def configure(self, config_kwargs):
+        """Configure the DAQ"""
         if self.runner:
             message = 'Configuring a new session before previous session has been terminated.'
-            log.warning(message)
+            self.logger.warning(message)
             if self.runner.is_running:
                 self.runner.stop()
-        config = DeviceConfiguration.deserialize(config_string)
+        config = DeviceConfiguration(**config_kwargs)
         config.validate()
         self.output_directory = self._create_output_directory()
         self.labels = config.labels
-        log.info('Writing port files to {}'.format(self.output_directory))
+        self.logger.info('Writing port files to %s', self.output_directory)
         self.runner = DaqRunner(config, self.output_directory)
-        return message
 
     def start(self):
+        """Start capturing. configure() must have been called before"""
+        self.logger.info('Start capturing')
         if self.runner:
             if not self.runner.is_running:
                 self.runner.start()
             else:
                 message = 'Calling start() before stop() has been called. Data up to this point will be lost.'
-                log.warning(message)
+                self.logger.warning(message)
                 self.runner.stop()
                 self.runner.start()
-                return message
         else:
             raise ProtocolError('Start called before a session has been configured.')
 
     def stop(self):
+        """Stop capturing"""
+        self.logger.info('Stop capturing')
         if self.runner:
             if self.runner.is_running:
                 self.runner.stop()
             else:
-                message = 'Attempting to stop() before start() was invoked.'
-                log.warning(message)
+                self.logger.warning('Attempting to stop() before start() was invoked.')
                 self.runner.stop()
-                return message
         else:
             raise ProtocolError('Stop called before a session has been configured.')
 
     def list_devices(self):  # pylint: disable=no-self-use
+        """List all devices attached to the DAQ if it supports enumeration"""
+        if not CAN_ENUMERATE_DEVICES:
+            raise TypeError('Server does not support DAQ device enumeration')
         return list_available_devices()
 
     def list_ports(self):
+        """
+        List all the ports for the configured DAQ. You need to call
+        configure() before being able to list ports
+        """
         return self.labels
 
     def list_port_files(self):
+        """List port files after a capturing session."""
         if not self.runner:
             raise ProtocolError('Attempting to list port files before session has been configured.')
         ports_with_files = []
         for port_id in self.labels:
-            path = self.get_port_file_path(port_id)
+            path = self._get_port_file_path(port_id)
             if os.path.isfile(path):
                 ports_with_files.append(port_id)
         return ports_with_files
 
-    def get_port_file_path(self, port_id):
+    def pull(self, port_id):
+        port_file = self._get_port_file_path(port_id)
+        try:
+            with open(port_file) as fin:
+                return fin.read()
+        except FileNotFoundError:
+            raise ValueError('File for port {} does not exist.'.format(port_id))
+
+    def _get_port_file_path(self, port_id):
         if not self.runner:
             raise ProtocolError('Attepting to get port file path before session has been configured.')
         return self.runner.get_port_file_path(port_id)
 
-    def terminate(self):
-        message = None
-        if self.runner:
-            if self.runner.is_running:
-                message = 'Terminating session before runner has been stopped.'
-                log.warning(message)
-                self.runner.stop()
-            self.runner = None
-            if self.output_directory and os.path.isdir(self.output_directory):
-                shutil.rmtree(self.output_directory)
-            self.output_directory = None
-            log.info('Session terminated.')
-        else:  # Runner has not been created.
+    def close(self):
+        """Close a session, stopping the DAQ and removing all temporary files"""
+        if not self.runner:
             message = 'Attempting to close session before it has been configured.'
-            log.warning(message)
-        return message
+            self.logger.warning(message)
+            return
+        if self.runner.is_running:
+            message = 'Terminating session before runner has been stopped.'
+            self.logger.warning(message)
+            self.runner.stop()
+        self.runner = None
+        if self.output_directory and os.path.isdir(self.output_directory):
+            shutil.rmtree(self.output_directory)
+            self.output_directory = None
+        self.logger.info('Session terminated.')
 
     def _create_output_directory(self):
         basename = datetime.now().strftime('%Y-%m-%d_%H%M%S%f')
@@ -199,299 +250,6 @@ class DaqServer(object):
 
     def __str__(self):
         return '({})'.format(self.base_output_directory)
-
-    __repr__ = __str__
-
-
-class DaqControlProtocol(LineReceiver):  # pylint: disable=W0223
-
-    def __init__(self, daq_server):
-        self.daq_server = daq_server
-        self.factory = None
-
-    def lineReceived(self, line):
-        line = line.strip()
-        if sys.version_info[0] == 3:
-            line = line.decode('utf-8')
-        log.info('Received: {}'.format(line))
-        try:
-            request = DaqServerRequest.deserialize(line)
-        except Exception as e:  # pylint: disable=W0703
-            # PyDAQmx exceptions use "mess" rather than the standard "message"
-            # to pass errors...
-            message = getattr(e, 'mess', e.args[0] if e.args else str(e))
-            self.sendError('Received bad request ({}: {})'.format(e.__class__.__name__, message))
-        else:
-            self.processRequest(request)
-
-    def processRequest(self, request):
-        try:
-            if request.command == 'configure':
-                self.configure(request)
-            elif request.command == 'start':
-                self.start(request)
-            elif request.command == 'stop':
-                self.stop(request)
-            elif request.command == 'list_devices':
-                self.list_devices(request)
-            elif request.command == 'list_ports':
-                self.list_ports(request)
-            elif request.command == 'list_port_files':
-                self.list_port_files(request)
-            elif request.command == 'pull':
-                self.pull_port_data(request)
-            elif request.command == 'close':
-                self.terminate(request)
-            else:
-                self.sendError('Received unknown command: {}'.format(request.command))
-        except Exception as e:  # pylint: disable=W0703
-            message = getattr(e, 'mess', e.args[0] if e.args else str(e))
-            self.sendError('{}: {}'.format(e.__class__.__name__, message))
-
-    def configure(self, request):
-        if 'config' in request.params:
-            result = self.daq_server.configure(request.params['config'])
-            if not result:
-                self.sendResponse(Status.OK)
-            else:
-                self.sendResponse(Status.OKISH, message=result)
-        else:
-            self.sendError('Invalid config; config string not provided.')
-
-    def start(self, request):
-        result = self.daq_server.start()
-        if not result:
-            self.sendResponse(Status.OK)
-        else:
-            self.sendResponse(Status.OKISH, message=result)
-
-    def stop(self, request):
-        result = self.daq_server.stop()
-        if not result:
-            self.sendResponse(Status.OK)
-        else:
-            self.sendResponse(Status.OKISH, message=result)
-
-    def pull_port_data(self, request):
-        if 'port_id' in request.params:
-            port_id = request.params['port_id']
-            port_file = self.daq_server.get_port_file_path(port_id)
-            if os.path.isfile(port_file):
-                port = self._initiate_file_transfer(port_file)
-                self.sendResponse(Status.OK, data={'port_number': port})
-            else:
-                self.sendError('File for port {} does not exist.'.format(port_id))
-        else:
-            self.sendError('Invalid pull request; port id not provided.')
-
-    def list_devices(self, request):
-        if CAN_ENUMERATE_DEVICES:
-            devices = self.daq_server.list_devices()
-            self.sendResponse(Status.OK, data={'devices': devices})
-        else:
-            message = "Server does not support DAQ device enumration"
-            self.sendResponse(Status.OKISH, message=message)
-
-    def list_ports(self, request):
-        port_labels = self.daq_server.list_ports()
-        self.sendResponse(Status.OK, data={'ports': port_labels})
-
-    def list_port_files(self, request):
-        port_labels = self.daq_server.list_port_files()
-        self.sendResponse(Status.OK, data={'ports': port_labels})
-
-    def terminate(self, request):
-        status = Status.OK
-        message = ''
-        if self.factory.transfer_sessions:
-            message = 'Terminating with file tranfer sessions in progress. '
-            log.warning(message)
-            for session in self.factory.transfer_sessions:
-                self.factory.transferComplete(session)
-        message += self.daq_server.terminate() or ''
-        if message:
-            status = Status.OKISH
-        self.sendResponse(status, message)
-
-    def sendError(self, message):
-        log.error(message)
-        self.sendResponse(Status.ERROR, message)
-
-    def sendResponse(self, status, message=None, data=None):
-        response = DaqServerResponse(status, message=message, data=data)
-        self.sendLine(response.serialize())
-
-    def sendLine(self, line):
-        log.info('Responding: {}'.format(line))
-        line = line.replace('\r\n', '')
-        if sys.version_info[0] == 3:
-            LineReceiver.sendLine(self, line.encode('utf-8'))
-        else:
-            LineReceiver.sendLine(self, line)
-
-    def _initiate_file_transfer(self, filepath):
-        sender_factory = FileSenderFactory(filepath, self.factory)
-        connector = reactor.listenTCP(0, sender_factory)
-        self.factory.transferInitiated(sender_factory, connector)
-        return connector.getHost().port
-
-
-class DaqFactory(Factory):
-
-    protocol = DaqControlProtocol
-    check_alive_period = 5 * 60
-    max_transfer_lifetime = 30 * 60
-
-    def __init__(self, server, cleanup_period=24 * 60 * 60, cleanup_after_days=5):
-        self.server = server
-        self.cleanup_period = cleanup_period
-        self.cleanup_threshold = timedelta(cleanup_after_days)
-        self.transfer_sessions = {}
-
-    def buildProtocol(self, addr):
-        proto = DaqControlProtocol(self.server)
-        proto.factory = self
-        reactor.callLater(self.check_alive_period, self.pulse)
-        reactor.callLater(self.cleanup_period, self.perform_cleanup)
-        return proto
-
-    def clientConnectionLost(self, connector, reason):
-        log.msg('client connection lost: {}.'.format(reason))
-        if not isinstance(reason, ConnectionLost):
-            log.msg('ERROR: Client terminated connection mid-transfer.')
-            for session in self.transfer_sessions:
-                self.transferComplete(session)
-
-    def transferInitiated(self, session, connector):
-        self.transfer_sessions[session] = (time.time(), connector)
-
-    def transferComplete(self, session, reason='OK'):
-        if reason != 'OK':
-            log.error(reason)
-        self.transfer_sessions[session][1].stopListening()
-        del self.transfer_sessions[session]
-
-    def pulse(self):
-        """Close down any file tranfer sessions that have been open for too long."""
-        current_time = time.time()
-        for session in self.transfer_sessions:
-            start_time, conn = self.transfer_sessions[session]
-            if (current_time - start_time) > self.max_transfer_lifetime:
-                message = '{} session on port {} timed out'
-                self.transferComplete(session, message.format(session, conn.getHost().port))
-        if self.transfer_sessions:
-            reactor.callLater(self.check_alive_period, self.pulse)
-
-    def perform_cleanup(self):
-        """
-        Cleanup and old uncollected data files to recover disk space.
-
-        """
-        log.msg('Performing cleanup of the output directory...')
-        base_directory = self.server.base_output_directory
-        current_time = datetime.now()
-        for entry in os.listdir(base_directory):
-            entry_path = os.path.join(base_directory, entry)
-            entry_ctime = datetime.fromtimestamp(os.path.getctime(entry_path))
-            existence_time = current_time - entry_ctime
-            if existence_time > self.cleanup_threshold:
-                log.debug('Removing {} (existed for {})'.format(entry, existence_time))
-                shutil.rmtree(entry_path)
-            else:
-                log.debug('Keeping {} (existed for {})'.format(entry, existence_time))
-        log.msg('Cleanup complete.')
-
-    def __str__(self):
-        return '<DAQ {}>'.format(self.server)
-
-    __repr__ = __str__
-
-
-@implementer(interfaces.IPushProducer)
-class FileReader(object):
-
-    def __init__(self, filepath):
-        self.fh = open(filepath)
-        self.proto = None
-        self.done = False
-        self._paused = True
-
-    def setProtocol(self, proto):
-        self.proto = proto
-
-    def resumeProducing(self):
-        if not self.proto:
-            raise ProtocolError('resumeProducing called with no protocol set.')
-        self._paused = False
-        try:
-            while not self._paused:
-                line = next(self.fh).rstrip('\n') + '\r\n'
-                if sys.version_info[0] == 3:
-                    self.proto.transport.write(line.encode('utf-8'))
-                else:
-                    self.proto.transport.write(line)
-        except StopIteration:
-            log.debug('Sent everything.')
-            self.stopProducing()
-
-    def pauseProducing(self):
-        self._paused = True
-
-    def stopProducing(self):
-        self.done = True
-        self.fh.close()
-        self.proto.transport.unregisterProducer()
-        self.proto.transport.loseConnection()
-
-
-class FileSenderProtocol(Protocol):
-
-    def __init__(self, reader):
-        self.reader = reader
-        self.factory = None
-
-    def connectionMade(self):
-        self.transport.registerProducer(self.reader, True)
-        self.reader.resumeProducing()
-
-    def connectionLost(self, reason=ConnectionDone):
-        if self.reader.done:
-            self.factory.transferComplete()
-        else:
-            self.reader.pauseProducing()
-            self.transport.unregisterProducer()
-
-
-class FileSenderFactory(Factory):
-
-    @property
-    def done(self):
-        if self.reader:
-            return self.reader.done
-        else:
-            return None
-
-    def __init__(self, path, owner):
-        self.path = os.path.abspath(path)
-        self.reader = None
-        self.owner = owner
-
-    def buildProtocol(self, addr):
-        if not self.reader:
-            self.reader = FileReader(self.path)
-        proto = FileSenderProtocol(self.reader)
-        proto.factory = self
-        self.reader.setProtocol(proto)
-        return proto
-
-    def transferComplete(self):
-        self.owner.transferComplete(self)
-
-    def __hash__(self):
-        return hash(self.path)
-
-    def __str__(self):
-        return '<FileSender {}>'.format(self.path)
 
     __repr__ = __str__
 
@@ -511,7 +269,8 @@ def run_server():
                         help='Specifies how ofte the server will attempt to clean up old files.')
     parser.add_argument('--debug', help='Run in debug mode (no DAQ connected).',
                         action='store_true', default=False)
-    parser.add_argument('--verbose', help='Produce verobose output.', action='store_true', default=False)
+    parser.add_argument('--verbose', help='Produce verobose output.', action='store_true',
+                        default=False)
     args = parser.parse_args()
 
     if args.debug:
@@ -521,23 +280,27 @@ def run_server():
         if not DaqRunner:
             raise __import_error  # pylint: disable=raising-bad-type
     if args.verbose or args.debug:
-        log.start_logging('DEBUG')
+        start_logging('DEBUG',
+                      '%(asctime)s %(name)-30s %(levelname)-7s: %(message)s')
     else:
-        log.start_logging('INFO')
+        start_logging('INFO')
 
     # days to seconds
     cleanup_period = args.cleanup_period * 24 * 60 * 60
 
-    server = DaqServer(args.directory)
-    factory = DaqFactory(server, cleanup_period, args.cleanup_after)
-    reactor.listenTCP(args.port, factory).getHost()
+    daq_server = DaqServer(args.directory)
+    logger = logging.getLogger(__name__)
+
+    server = SimpleXMLRPCServer(('', args.port), allow_none=True)
+    server.register_instance(daq_server)
+
     try:
         hostname = socket.gethostbyname(socket.gethostname())
     except socket.gaierror:
         hostname = 'localhost'
-    log.info('Listening on {}:{}'.format(hostname, args.port))
-    reactor.run()
+    logger.info('Listening on %s:%d', hostname, args.port)
 
+    server.serve_forever()
 
 if __name__ == "__main__":
     run_server()

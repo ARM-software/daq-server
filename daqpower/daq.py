@@ -46,6 +46,7 @@ Port 0
 import os
 import sys
 import csv
+import logging
 import time
 import threading
 import numpy
@@ -72,9 +73,6 @@ try:
 except ImportError:  # earlier driver version
     DAQmx_Val_Acquired_Into_Buffer = None
     callbacks_supported = False
-
-
-from daqpower import log
 
 
 def list_available_devices():
@@ -306,6 +304,7 @@ class DaqRunner(object):
         return self.config.number_of_ports
 
     def __init__(self, config, output_directory):
+        self.logger = logging.getLogger("{}.{}".format(__name__, self.__class__.__name__))
         self.config = config
         self.processor = SampleProcessor(config.resistor_values, output_directory, config.labels)
         if callbacks_supported:
@@ -315,20 +314,20 @@ class DaqRunner(object):
         self.is_running = False
 
     def start(self):
-        log.debug('Starting sample processor.')
+        self.logger.debug('Starting sample processor.')
         self.processor.start()
-        log.debug('Starting DAQ Task.')
+        self.logger.debug('Starting DAQ Task.')
         self.task.StartTask()
         self.is_running = True
-        log.debug('Runner started.')
+        self.logger.debug('Runner started.')
 
     def stop(self):
         self.is_running = False
-        log.debug('Stopping DAQ Task.')
+        self.logger.debug('Stopping DAQ Task.')
         self.task.StopTask()
-        log.debug('Stopping sample processor.')
+        self.logger.debug('Stopping sample processor.')
         self.processor.stop()
-        log.debug('Runner stopped.')
+        self.logger.debug('Runner stopped.')
 
     def get_port_file_path(self, port_id):
         return self.processor.get_port_file_path(port_id)

@@ -15,8 +15,7 @@
 
 
 import argparse
-
-from daqpower.common import Serializable
+import json
 
 
 class ConfigurationError(Exception):
@@ -24,7 +23,7 @@ class ConfigurationError(Exception):
     pass
 
 
-class DeviceConfiguration(Serializable):
+class DeviceConfiguration:
     """Encapulates configuration for the DAQ, typically, passed from
     the client."""
 
@@ -69,32 +68,9 @@ class DeviceConfiguration(Serializable):
             raise ConfigurationError(message)
 
     def __str__(self):
-        return self.serialize()
+        return json.dumps(self.__dict__)
 
     __repr__ = __str__
-
-
-class ServerConfiguration(object):
-    """Client-side server configuration."""
-
-    valid_settings = ['host', 'port']
-
-    default_host = '127.0.0.1'
-    default_port = 45677
-
-    def __init__(self, **kwargs):
-        self.host = kwargs.pop('host', None) or self.default_host
-        self.port = kwargs.pop('port', None) or self.default_port
-        if kwargs:
-            raise ConfigurationError('Unexpected config: {}'.format(kwargs))
-
-    def validate(self):
-        if not self.host:
-            raise ConfigurationError('Server host not specified.')
-        if not self.port:
-            raise ConfigurationError('Server port not specified.')
-        elif not isinstance(self.port, int):
-            raise ConfigurationError('Server port must be an integer.')
 
 
 class UpdateDeviceConfig(argparse.Action):
@@ -104,15 +80,6 @@ class UpdateDeviceConfig(argparse.Action):
         if setting not in DeviceConfiguration.valid_settings:
             raise ConfigurationError('Unkown option: {}'.format(option_string))
         setattr(namespace._device_config, setting, values)  # pylint: disable=protected-access
-
-
-class UpdateServerConfig(argparse.Action):
-
-    def __call__(self, parser, namespace, values, option_string=None):
-        setting = option_string.strip('-').replace('-', '_')
-        if setting not in namespace.server_config.valid_settings:
-            raise ConfigurationError('Unkown option: {}'.format(option_string))
-        setattr(namespace.server_config, setting, values)
 
 
 class ConfigNamespace(object):
@@ -133,7 +100,6 @@ class ConfigNamespace(object):
 
     def __init__(self):
         self._device_config = self._N()
-        self.server_config = ServerConfiguration()
 
 
 class ConfigArgumentParser(argparse.ArgumentParser):
@@ -143,7 +109,7 @@ class ConfigArgumentParser(argparse.ArgumentParser):
         return super(ConfigArgumentParser, self).parse_args(*args, **kwargs)
 
 
-def get_config_parser(server=True, device=True):
+def get_config_parser(device=True):
     parser = ConfigArgumentParser()
     if device:
         parser.add_argument('--device-id', action=UpdateDeviceConfig)
@@ -152,7 +118,7 @@ def get_config_parser(server=True, device=True):
         parser.add_argument('--sampling-rate', action=UpdateDeviceConfig, type=int)
         parser.add_argument('--resistor-values', action=UpdateDeviceConfig, type=float, nargs='*')
         parser.add_argument('--labels', action=UpdateDeviceConfig, nargs='*')
-    if server:
-        parser.add_argument('--host', action=UpdateServerConfig)
-        parser.add_argument('--port', action=UpdateServerConfig, type=int)
+
+    parser.add_argument('--host', default='127.0.0.1')
+    parser.add_argument('--port', default=45677, type=int)
     return parser

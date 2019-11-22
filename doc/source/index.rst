@@ -102,11 +102,12 @@ the package which is available for download via pip or from `Github`_.
 
   - Install NI-DAQmx driver, as described in the previous section.
   - Install Python 2.7 or Python3.
-  - Download and install ``pip``, ``numpy`` and ``twisted`` Python packages.
-    These packages have C extensions, an so you will need a native compiler set
-    up if you want to install them from PyPI. As an easier alternative, you can
-    find pre-built Windows installers for these packages here_ (the versions are
-    likely to be older than what's on PyPI though).
+  - Download and install ``pip`` and ``numpy`` Python packages.  These
+    packages have C extensions, so you will need a native compiler
+    set up if you want to install them from PyPI. As an easier
+    alternative, you can find pre-built Windows installers for these
+    packages here_ (the versions are likely to be older than what's on
+    PyPI though).
   - Install the daqpower package using pip::
 
         sudo -H pip install daqpower
@@ -138,15 +139,23 @@ command line. The server will start listening on the default port, 45677.
 
 You can optionally specify flags to control the behaviour or the server::
 
-        usage: run-daq-server [-h] [-d DIR] [-p PORT] [--debug] [--verbose]
+        usage: run-daq-server [-h] [-d DIR] [-p PORT] [-c DAYS]
+                              [--cleanup-period DAYS] [--debug] [--verbose]
 
         optional arguments:
-        -h, --help            show this help message and exit
-        -d DIR, --directory DIR
+          -h, --help            show this help message and exit
+          -d DIR, --directory DIR
                                 Working directory
-        -p PORT, --port PORT  port the server will listen on.
-        --debug               Run in debug mode (no DAQ connected).
-        --verbose             Produce verbose output.
+          -p PORT, --port PORT  port the server will listen on.
+          -c DAYS, --cleanup-after DAYS
+                                Sever will perodically clean up data files that are
+                                older than the number of days specfied by this
+                                parameter.
+          --cleanup-period DAYS
+                                Specifies how ofte the server will attempt to clean up
+                                old files.
+          --debug               Run in debug mode (no DAQ connected).
+          --verbose             Produce verobose output.
 
 .. note:: The server will use a working directory (by default, the directory
           the run-daq-server command was executed in, or the location specified
@@ -163,8 +172,6 @@ DAQ to collect power measurements during workload execution.
 
 .. note:: You do *not* need to install the ``daqpower`` package on the machine
           running WA, as it is already included in the WA install structure.
-          However, you do need to make sure that ``twisted`` package is
-          installed.
 
 You can enable ``daq`` instrument your agenda/config.yaml in order to get WA to
 collect power measurements. At minimum, you will also need to specify the
@@ -202,7 +209,12 @@ line. Unlike when collecting power with WA, you *will* need to install the
 ``daqpower`` package. Once installed, you will be able to interact with a
 running DAQ server by invoking ``send-daq-command``. The invocation syntax is ::
 
-        send-daq-command --host HOST [--port PORT] COMMAND [OPTIONS]
+        usage: send-daq-command [-h] [--device-id DEVICE_ID] [--v-range V_RANGE]
+                        [--dv-range DV_RANGE] [--sampling-rate SAMPLING_RATE]
+                        [--resistor-values [RESISTOR_VALUES [RESISTOR_VALUES ...]]]
+                        [--labels [LABELS [LABELS ...]]] [--host HOST]
+                        [--port PORT] [-o DIR] [--verbose]
+                        command [arguments [arguments ...]]
 
 Options are command-specific. COMMAND may be one of the following (and they
 should generally be invoked in that order):
@@ -221,7 +233,7 @@ should generally be invoked in that order):
                     be pulled to; if this is not specified, the will be in the
                     current directory.
         :close: Close the currently configured server session. This will get rid
-                of  the data files and configuration on the server, so it would
+                of the data files and configuration on the server, so it would
                 no longer be possible to use "start" or "get_data" commands
                 before a new session is configured.
 
@@ -259,7 +271,7 @@ Collecting Power from another Python Script
 ===========================================
 
 You can invoke the above commands from a Python script using
-:py:func:`daqpower.client.execute_command` function, passing in
-:class:`daqpower.config.ServerConfiguration` and, in case of the configure command,
-:class:`daqpower.config.DeviceConfigruation`. Please see the implementation of
-the ``daq`` WA instrument for examples of how these APIs can be used.
+:py:func:`daqpower.client.DaqClient` function, passing in
+:class:`daqpower.config.DeviceConfigruation` to the `configure()`
+function.. Please see the implementation of the ``daq`` WA instrument
+for examples of how these APIs can be used.
