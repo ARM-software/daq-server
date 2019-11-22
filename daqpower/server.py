@@ -44,6 +44,7 @@ except (ImportError, NotImplementedError) as e:
     __import_error = e
     DaqRunner = None
     list_available_devices = lambda: ['Dev1']
+    CAN_ENUMERATE_DEVICES = True
 
 
 class ProtocolError(Exception):
