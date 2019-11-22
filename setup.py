@@ -36,7 +36,6 @@ params = dict(
     maintainer='ARM Device Lab',
     maintainer_email='workload-automation@arm.com',
     install_requires=[
-        'twisted',
         'PyDAQmx',
         'numpy'
     ],
