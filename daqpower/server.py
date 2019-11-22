@@ -24,6 +24,7 @@ import shutil
 import socket
 import threading
 import time
+import uuid
 from datetime import datetime, timedelta
 try:
     from xmlrpc.server import SimpleXMLRPCServer
@@ -129,6 +130,89 @@ class CleanupDirectoryThread(threading.Thread):
         self.join()
 
 
+class OpenFileInfo(object):
+    """Simple structure to track when each file was opened"""
+    def __init__(self, port_file):
+        self.port_file = port_file
+        self.created = time.time()
+
+
+class OpenFileTracker(object):
+    """Track open file descriptors and close them if the transfer times out"""
+    def __init__(self):
+        self.logger = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
+        self.opened_files = {}
+        self.lock = threading.Lock()
+        # Maximum transfer lifetime in seconds
+        max_transfer_lifetime = 30 * 60
+        self.terminate_timeout_thread = threading.Event()
+
+        self.timeout_thread = threading.Thread(target=self.pulse,
+                                               name='OpenFileTracker',
+                                               args=(max_transfer_lifetime,))
+        self.timeout_thread.daemon = True
+        self.timeout_thread.start()
+
+    def open(self, filename):
+        """
+        Open file and track when we did it. Return a descriptor to be used
+        for reading and closing
+        """
+        port_file = open(filename)
+        file_info = OpenFileInfo(port_file)
+        port_descriptor = uuid.uuid4().hex
+        with self.lock:
+            self.opened_files[port_descriptor] = file_info
+
+        return port_descriptor
+
+    def read(self, descriptor, size):
+        """Read from a file previously opened by self.open()"""
+        try:
+            with self.lock:
+                port_file = self.opened_files[descriptor].port_file
+                return port_file.read(size)
+        except KeyError:
+            raise ProtocolError('Unknown port descriptor {}'.format(descriptor))
+
+
+    def close(self, descriptor):
+        """Close a file previously opened by self.open()"""
+        try:
+            with self.lock:
+                port_file = self.opened_files[descriptor].port_file
+                port_file.close()
+                del self.opened_files[descriptor]
+        except KeyError:
+            raise ProtocolError('Unknown port descriptor {}'.format(descriptor))
+
+    def terminate(self):
+        """Tear down this tracker and close all remaining open files"""
+        self.logger.debug('Terminating timeout thread')
+        self.terminate_timeout_thread.set()
+        self.timeout_thread.join()
+        for opened_file in self.opened_files.values():
+            opened_file.port_file.close()
+
+    def pulse(self, max_transfer_lifetime):
+        """Close down any file tranfer sessions that have been open for too long."""
+        poll_period = max_transfer_lifetime / 2
+        while not self.terminate_timeout_thread.wait(timeout=poll_period):
+            self.logger.debug('Checkig for timeout file transfers')
+            current_time = time.time()
+            expire_before = current_time - max_transfer_lifetime
+
+            with self.lock:
+                # Iterate over a copy of the self.opened_files to be able to
+                # remove from the dictionary if needed
+                for descriptor, opened_file in list(self.opened_files.items()):
+                    if opened_file.created < expire_before:
+                        self.logger.info('Transfer for file %s timed out',
+                                         opened_file.port_file.name)
+                        opened_file.port_file.close()
+                        del self.opened_files[descriptor]
+
+
 class DaqServer(object):
     """Interface between a DaqRunner and a remote client"""
     def __init__(self, base_output_directory):
@@ -142,6 +226,7 @@ class DaqServer(object):
         self.cleanup_directory_thread = CleanupDirectoryThread(self.base_output_directory)
         self.cleanup_directory_thread.start()
         self.runner = None
+        self.opened_files = None
         self.output_directory = None
         self.labels = None
 
@@ -157,6 +242,7 @@ class DaqServer(object):
         self.output_directory = self._create_output_directory()
         self.labels = config.labels
         self.logger.info('Writing port files to %s', self.output_directory)
+        self.opened_files = OpenFileTracker()
         self.runner = DaqRunner(config, self.output_directory)
 
     def start(self):
@@ -209,13 +295,40 @@ class DaqServer(object):
                 ports_with_files.append(port_id)
         return ports_with_files
 
-    def pull(self, port_id):
-        port_file = self._get_port_file_path(port_id)
+    def open_port_file(self, port_id):
+        """
+        Start transfer of a port file.  You can get a list of valid port_id by
+        calling list_port_files.  The returned string is a descriptor that can
+        be used with read_port_file() and close_port_file()
+
+        """
+        filename = self._get_port_file_path(port_id)
         try:
-            with open(port_file) as fin:
-                return fin.read()
+            return self.opened_files.open(filename)
         except FileNotFoundError:
             raise ValueError('File for port {} does not exist.'.format(port_id))
+        except AttributeError:
+            if not self.opened_files:
+                raise ProtocolError('open_port_file called on an unconfigured session')
+            raise
+
+    def read_port_file(self, port_descriptor, size):
+        """
+        Read from a port file after it has been opened with open_port_file().
+        size is the amount of bytes you want to read
+        """
+        if not self.opened_files:
+            raise ProtocolError('read_port_file called on an unconfigured session')
+        return self.opened_files.read(port_descriptor, size)
+
+    def close_port_file(self, port_descriptor):
+        """
+        Close a port file opened by open_port_file(). After calling this, any
+        call to read_port_file() for this port_descriptor will fail.
+        """
+        if not self.opened_files:
+            raise ProtocolError('close_port_file called on an unconfigured session')
+        self.opened_files.close(port_descriptor)
 
     def _get_port_file_path(self, port_id):
         if not self.runner:
@@ -233,6 +346,8 @@ class DaqServer(object):
             self.logger.warning(message)
             self.runner.stop()
         self.runner = None
+        self.opened_files.terminate()
+        self.opened_files = None
         if self.output_directory and os.path.isdir(self.output_directory):
             shutil.rmtree(self.output_directory)
             self.output_directory = None
