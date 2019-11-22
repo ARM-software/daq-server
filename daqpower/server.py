@@ -39,7 +39,7 @@ from daqpower.common import DaqServerRequest, DaqServerResponse, Status
 try:
     from daqpower.daq import DaqRunner, list_available_devices, CAN_ENUMERATE_DEVICES
     __import_error = None
-except ImportError as e:
+except (ImportError, NotImplementedError) as e:
     # May be using debug mode.
     __import_error = e
     DaqRunner = None
