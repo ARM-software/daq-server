@@ -498,7 +498,8 @@ class FileSenderFactory(Factory):
 
 def run_server():
     parser = argparse.ArgumentParser()
-    parser.add_argument('-d', '--directory', help='Working directory', metavar='DIR', default='.')
+    parser.add_argument('-d', '--directory', help='Working directory', metavar='DIR',
+                        default='daq_server_tmpfiles')
     parser.add_argument('-p', '--port', help='port the server will listen on.',
                         metavar='PORT', default=45677, type=int)
     parser.add_argument('-c', '--cleanup-after', type=int, default=5, metavar='DAYS',
