@@ -18,7 +18,11 @@
 import os
 import logging
 import sys
-import xmlrpc.client
+try:
+    from xmlrpc.client import ServerProxy
+except ImportError:
+    # In python2 it was called xmlrpclib
+    from xmlrpclib import ServerProxy
 
 
 if __name__ == '__main__':  # for debugging
@@ -47,7 +51,10 @@ class FileReceiver(object):
         """Read size bytes from the file"""
         return self.daq_client.read_port_file(self.port_descriptor, size)
 
-class DaqClient(xmlrpc.client.ServerProxy):
+
+# Multiple inheritance with object is needed for python2, as ServerProxy is not
+# a new-style class and inheritance with super() doesn't work out of the box.
+class DaqClient(ServerProxy, object):
     """Interface with the remote DAQ server"""
     def __init__(self, host, port):
         self.logger = logging.getLogger('{}.{}'.format(__name__, self.__class__.__name__))
