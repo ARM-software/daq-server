@@ -80,7 +80,7 @@ Setting up NI-DAQmx driver on a Windows Machine
    - The NI-DAQmx driver is pretty big in size, 1.5 GB. The driver name is
      'NI-DAQmx' and its version '9.7.0f0' which you can obtain it from National
      Instruments website by downloading NI Measurement & Automation Explorer (Ni
-     MAX) from: http://joule.ni.com/nidu/cds/view/p/id/3811/lang/en
+     MAX) from: https://www.ni.com/en-gb/support/downloads/drivers/download.ni-daqmx.html#288366
 
      .. note:: During the installation process, you might be prompted to install
               .NET framework 4.
